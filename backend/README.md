@@ -1,0 +1,213 @@
+# Backend
+
+Criar pelo npm init
+
+```bash
+npm init -y
+```
+
+Existem 2 estratégias para criar um projeto GraphQL:
+
+- schema first
+- code first
+
+Iremos pela abordagem code first.
+
+Instalar as ferramentas que iremos utilizar
+
+```bash
+npm i type-graphql graphql apollo-server class-validator reflect-metadata
+```
+
+E vamos instalar o typescript na dependência de desenvolvimento
+
+```bash
+npm i typescript @types/node ts-node-dev -D
+```
+
+Criar um arquivo `index.ts` na raiz do projeto e adicionar o `script` no `package.json`:
+
+```json
+{
+  "script": {
+    "dev": "tsnd --respawn --transpile-only index.ts"
+  }
+}
+```
+
+No `index.ts` teremos uma função `main` onde criaremos um `schema`.
+
+`index.ts`
+
+```ts
+import path from 'path';
+import { ApolloServer } from 'apollo-server';
+import { buildSchema } from 'type-graphql';
+
+async function main() {
+  // Importamos o buildSchema, que recebe como parâmetros: resolvers e emitSchemaFile, que será onde queremos salvar o arquivo de schema do graphql.
+  const schema = await buildSchema({
+    resolvers: [],
+    emitSchemaFile: path.resolve(__dirname, 'schema.gql'),
+  });
+
+  // Criaremos um server utilizando o apollo-server, passando o schema
+  const server = new ApolloServer({
+    schema,
+  });
+
+  const { url } = await server.listen();
+
+  console.log(`Server running on ${url}`);
+}
+
+main();
+```
+
+Por enquanto, está dando erro nos `resolvers`. Como no graphql não temos a definição de rotas, os `resolvers` serão como os `controllers` ou as rotas da nossa aplicação. Como no graphql temos somente uma rota, quem irá dizer quais informações retornar serão os `resolvers`.
+
+Vamos criar a pasta `src` e a pasta `resolvers` dentro dela, onde iremos colocar todos os resolvers do graphql.
+
+Em `UserResolver.ts`, vamos exportar a class `UserResolver`. Agora iremos usar um decorator do type-graphql. Para eles funcionarem, temos que inicializar o typescript.
+
+```bash
+npx tsc --init
+```
+
+No arquivo `tsconfig.json` criado, vamos alterar as linhas, conforme documentação do [type-graphql](https://typegraphql.com/docs/installation.html):
+
+```json
+{
+  "compilersOptions": {
+    "target": "es2018",
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+  }
+}
+```
+
+Adicionamos o import do `reflect-metadata` no `index.ts` principal:
+
+```ts
+import "reflect-metadata";
+```
+
+Voltando ao `UserResolver.ts`, vamos criar a classe `UserResolver` e adicionar o decorator `@Resolver()` e `@Query()` na função `hello`:
+
+```ts
+import { Query, Resolver } from 'type-graphql';
+
+@Resolver()
+export class UserResolver {
+  @Query(() => String)
+  async hello() {
+    return `Hello World`;
+  }
+}
+```
+
+Adicionamos o `UserResolver` nos `resolvers` do `index.ts`:
+
+```ts
+import { UserResolver } from '.src/resolvers/UserResolver';
+
+async function main() {
+  const schema = await buildSchema({
+    resolvers: [UserResolver], // Adicionamos o UserResolver
+  });
+}
+```
+
+E inicializamos nosso backend:
+
+```bash
+npm run dev
+```
+
+Abrimos o navegador no `http://localhost:4000` e vemos que o Apollo está funcionando. Iremos clicar em `Query your server` que abre a ferramenta GraphQL playground.
+
+Dentro de `Operation` podemos fazer as operações para nosso backend. Podemos fazer uma `query` e buscar dados do backend.
+
+O GraphQL é fortemente tipado, trazendo um intellisense que ajuda a saber quais métodos temos disponíveis.
+
+Vamos criar uma classe `User` dentro da pasta `models` que representa um usuário do nosso backend. E para parar de dar erro, vamos adicionar no `tsconfig.json` essa propriedade:
+
+```json
+{
+  "compilerOptions": {
+    "strictPropertyInitialization": false,
+  }
+}
+```
+
+Adicionamos o decorator `@ObjectType` à classe e `@Field` para cada campo.
+
+`User.ts`
+
+```ts
+import { Field, ID, ObjectType } from 'type-graphql';
+
+@ObjectType()
+export class User {
+  @Field((_type) => ID)
+  id: string;
+
+  @Field()
+  name: string;
+}
+```
+
+Voltamos ao `UserResolver`
+
+```ts
+import { Query, Resolver } from 'type-graphql';
+import { User } from './../models/User';
+
+@Resolver()
+export class UserResolver {
+  private data: User[] = [];
+
+  @Query(() => [User])
+  async users() {
+    return this.data;
+  }
+}
+```
+
+No GraphQL temos dois conceitos:
+
+- Query: para buscar dados
+- Mutation: para criar, alterar ou deletar dados
+
+Vamos criar o método `createUser`:
+
+```ts
+  @Mutation(() => User)
+  async createUser(@Arg('name') name: string) {
+    const user = { id: crypto.randomUUID(), name };
+    this.data.push(user);
+    return user;
+  }
+```
+
+Como seguimos pelo formato `code first`, podemos reparar que o arquivo `schema.gql` foi criado no caminho que passamos no `emitSchemaFile`. Criamos o código e ele que se encarrega de criar o `schema`. O graphql criou várias instruções que o playground ou o frontend podem utilizar. E, dessa forma, podemos ver quais queries e mutations estão disponíveis e quais tipos de dados temos na aplicação.
+
+```gql
+# -----------------------------------------------
+# !!! THIS FILE WAS GENERATED BY TYPE-GRAPHQL !!!
+# !!!   DO NOT MODIFY THIS FILE BY YOURSELF   !!!
+# -----------------------------------------------
+
+type Mutation {
+  createUser(name: String!): User!
+}
+
+type Query {
+  users: [User!]!
+}
+
+type User {
+  id: ID!
+  name: String!
+}
+```
